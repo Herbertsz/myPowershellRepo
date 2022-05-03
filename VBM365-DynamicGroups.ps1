@@ -1,8 +1,8 @@
-<#
+﻿<#
 
     .SYNOPSIS
     This script creates Dynamic Distribution Groups for Exchange and/or Onedrive in AzureAD,
-    which can be used for Veeam Backup for Microsoft 365. 
+	and queries groups based on given input parameters.
 
 
     .NOTES
@@ -11,8 +11,9 @@
     I use functions from David Bewernick's VBO-CreateDynamicGroups.ps1, which you can find here:
     https://github.com/VeeamHub/powershell/tree/master/VBO-CreateDynamicGroups
 
-    In case you need more than 2 to 16 distributiongroups, use David's script, because it creates 
-    64 groups for exchange using a slightly different algorithm, though no Onedrive-only groups.
+    In case you need more than 2 to 16 Exchange distributiongroups, use David's script. Though 
+	it creates no Onedrive-only groups, it can create up to 64 groups for Exchange using a 
+	slightly different algorithm.
 
     This is no official Veeam software, I just created this for convenience of my customers.
     Though checked on a best effort basis, it may contain errors.
@@ -48,22 +49,24 @@
         should maximally contain, plz contact your Veeam SE.
 
     .USAGE
-    When the script starts, it checks, if there is an AzureAD session available, which
-    it has created at a prior run.
+
+    When the script starts, it checks, if there is an AzureAD session available from a prior run.
     If yes, it is used again, if no, it prompts you for a login. 
+    To logout from the AzureAD session after the script run, specify the "-logout" parameter.
 
-    without parameters:  displays the properties of the dynamic distributiongroups
-                whose displaynames start with "Veeam" 
+    without parameters :  displays help 
 
-    "-ExchGrp"        :  creates dynamic distributiongroups for Exchange backup
+    "-qGroups" <string>:  displays AzureAD groups found by search criteria <string>
 
-    "-ODGrp"          :  creates dynamic distributiongroups for Onedrive backup
+    "-ExchGrp"         :  creates dynamic distributiongroups for Exchange backup
 
-    "-Groups <number> :  number of groups which should be created. 
+    "-ODGrp"           :  creates dynamic distributiongroups for Onedrive backup
+
+    "-Groups" <number> :  number of groups which should be created. 
                 Must be an integer between 2 and 16. Can only be specified with
                 one or both of the above 2 parameters.
 
-    "-logout"         :  the script logs out of the current AzureAD session it
+    "-logout"          :  the script logs out of the current AzureAD session it
                 has just used. By default the session is kept running, for being 
                 able to run the script several times without the need for
                 multiple logins. If "-logout" is not used, a yellow warning 
@@ -72,14 +75,15 @@
                 also use it standalone.
         
 
-    Last Updated: April 2022
-    Version: 1.2
+    Last Updated: May 2022
+    Version: 1.3
 	
 	Fixes: 
         2022-04-01, V1.0: First version
         2022-04-02, V1.1: Added OneDrive groups and parameter for flexible number of 
                           groups creation between 2 and 16
         2022-04-03, V1.2: Added group display, optional AzureAD logout and usercount per group
+        2022-05-02, V1.3: Added separate parameter for group dispay, added help display
   
     Requires:
     To run the script you must install the Microsoft AzureAdPreview Powershell module:
@@ -90,18 +94,28 @@
 
 #Requires -Modules AzureAdPreview
 
-[CmdletBinding(PositionalBinding=$False)]
+[CmdletBinding(DefaultParameterSetName='help',PositionalBinding=$False)]  
+
 Param(
     # Generates dynamic distribution groups for Exchange
     [switch] $ExchGrp,
+
 	# Generates dynamic distribution groups for Onedrive
     [switch] $ODGrp,
+
     # Specifies the number of groups you want to generate (2 - 16)
     [int] $Groups = 0,
+
+    # Displays the groups you select
+    [STRING[]]$qGroups,
+
 	# Logout from AzureAD when script exits
-    [Parameter(ParameterSetName="logout")]
+    [parameter(ParameterSetName="logout")]
     [alias("logoff")]
-    [switch] $logout
+    [switch] $logout,
+
+    [parameter(ParameterSetName="help")]
+    [SWITCH]$help   
 );
 
           $Global:azureConnection      = ''
@@ -116,6 +130,9 @@ Param(
 				' ,"902b47e5-dcb2-4fdc-858b-c63a90a2bdb9" ,"8f9f0f3b-ca90-406c-a842-95579171f8ec" ,"153f85dd-d912-4762-af6c-d6e0fb4f6692"' + 
 				' ,"735c1d98-dd3f-4818-b4ed-c8052e18e62d" ,"e03c7e47-402c-463c-ab25-949079bedb21" ,"e5bb877f-6ac9-4461-9e43-ca581543ab16"' + 
 				' ,"a361d6e2-509e-4e25-a8ad-950060064ef4" ,"527f7cdd-0e86-4c47-b879-f5fd357a3ac6" ,"a1f3d0a8-84c0-4ae0-bae4-685917b8ab48"]))' 
+
+#--------------------- Function for help display
+function help() { return Get-Content $PSCommandPath -TotalCount 90 | Select-String -Pattern '.USAGE' -Context 0,27 }
 
 #--------------------- Function for logmessage writing
 function Write-Log($Info, $Status){
@@ -189,8 +206,21 @@ function Create-ODGroups(){
 
 
 #--------------------- Main function
+
+if (!($Groups -or $ODGrp -or $ExchGrp -or $qGroups -or $logout)) {
+    help
+    exit
+}
+
 if ($Groups) 
 {
+
+    if (!$ODGrp -and !$ExchGrp) {
+            Write-Log -Info "Which groups ?  For Onedrive, for Exchange, or for both ?" -Status Error
+            exit 99
+    }
+
+
     $arrCharString  = "0123456789abcdef"
     $Global:arrchar = switch ($Groups)
     {
@@ -236,21 +266,11 @@ if($Global:AccountID -eq $null) {
     }
 }
 
-if ($ExchGrp) {
-	Write-Log -Info "Creating Exchange groups..." -Status Info
-	Create-ExGroups
-}
-	
-if ($ODGrp) {
-	Write-Log -Info "Creating ONEDrive groups..." -Status Info
-	Create-ODGroups
-}
-	
-if (!$ODGrp -and !$Exchgrp) {
-	Write-Log -Info "Your existing Veeam groups (this may take some time, be patient):" -Status Info
+if ($qGroups) {
+	Write-Log -Info "Searching your $qGroups groups (this may take some time, be patient):" -Status Info
     Try {
         (Get-AzureADMSGroup | 
-            where{$_.DisplayName -like 'Veeam_*'} | 
+            where{$_.DisplayName -like $qGroups} | 
             Sort-Object -Property DisplayName |
             ForEach-Object { $_ | 
             Add-Member -type NoteProperty -name Users -value ((Get-AzureADGroupMember -ObjectId $_.ID).count) -PassThru } |
@@ -259,7 +279,8 @@ if (!$ODGrp -and !$Exchgrp) {
                @{Label="Users";Expression={$_.Users}},
                @{Label="Description";Expression={$_.Description}} -autosize |
             Out-String).Trim()
-        Write-Log -Info "It may take minutes or even hours with large groups, until they are correctly filled with all users. Be patient." -Status Warning
+        Write-Log -Info "It may take some minutes with large groups, until they are correctly filled with all users. Be patient." -Status Warning
+        exit
     }
     catch {
         Write-Log -Info "$_" -Status Error
@@ -267,7 +288,18 @@ if (!$ODGrp -and !$Exchgrp) {
         exit 99
     }
 }
-
+else {
+    if ($ExchGrp) {
+	    Write-Log -Info "Creating Exchange groups..." -Status Info
+	    Create-ExGroups
+    }
+	
+    if ($ODGrp) {
+	    Write-Log -Info "Creating ONEDrive groups..." -Status Info
+	    Create-ODGroups
+    }
+}
+	
 if($Global:AccountID -ne $null) {
     if ($logout) {
         Write-Log -Info "Trying to disconnect from AzureAD..." -Status Info
@@ -275,6 +307,7 @@ if($Global:AccountID -ne $null) {
             $Global:AccountID = $null
             Disconnect-AzureAD
             Write-Log -Info "Successfully disconnected" -Status Info
+            exit
         } 
         catch {
             Write-Log -Info "$_" -Status Error
