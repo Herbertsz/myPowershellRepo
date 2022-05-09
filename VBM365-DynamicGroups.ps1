@@ -41,13 +41,6 @@
         generate unnecessary warning messages in the Veeam backupjobs. 
         This can be avoided with the OD groups.
 
-    Why does the script not allow to create just one group only for the whole org ?
-        It makes no sense. In case you want to backup your whole Org without group
-        selection, just specify the Org in the backup job, and not groups.
-        This script is made for companies which need to split their users to
-        multiple different repositories or jobs.  For best practice how many users one group
-        should maximally contain, plz contact your Veeam SE.
-
     .USAGE
 
     When the script starts, it checks, if there is an AzureAD session available from a prior run.
