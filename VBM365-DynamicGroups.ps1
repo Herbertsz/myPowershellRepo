@@ -2,7 +2,7 @@
 
     .SYNOPSIS
     This script creates Dynamic Distribution Groups for Exchange and/or Onedrive in AzureAD,
-	and queries groups based on given input parameters.
+    and queries groups based on given input parameters.
 
 
     .NOTES
@@ -10,10 +10,6 @@
 
     I use functions from David Bewernick's VBO-CreateDynamicGroups.ps1, which you can find here:
     https://github.com/VeeamHub/powershell/tree/master/VBO-CreateDynamicGroups
-
-    In case you need more than 2 to 16 Exchange distributiongroups, use David's script. Though 
-	it creates no Onedrive-only groups, it can create up to 64 groups for Exchange using a 
-	slightly different algorithm.
 
     This is no official Veeam software, I just created this for convenience of my customers.
     Though checked on a best effort basis, it may contain errors.
@@ -35,14 +31,7 @@
     For the OneDrive groups the userassigned serviceplan IDs for Onedrive are also used
     for comparison, so users without Onedrive access are not included there.
 
-    .FAQ
-    Why separate groups for OneDrive ? 
-        The Exchange Groups contain also shared mailboxes with no OneDrive access, and these
-        generate unnecessary warning messages in the Veeam backupjobs. 
-        This can be avoided with the OD groups.
-
     .USAGE
-
     When the script starts, it checks, if there is an AzureAD session available from a prior run.
     If yes, it is used again, if no, it prompts you for a login. 
     To logout from the AzureAD session after the script run, specify the "-logout" parameter.
@@ -52,6 +41,7 @@
     "-help"            :  displays help
 
     "-qGroups" <string>:  displays AzureAD groups found by search criteria <string>
+                The search criteria may contain generic chars '?' and '*'
 
     "-ExchGrp"         :  creates dynamic distributiongroups for Exchange backup
 
@@ -61,17 +51,24 @@
                 Must be an integer between 2 and 16. Can only be specified with
                 one or both of the above 2 parameters.
 
+    "-IgnoreDisabledAcc:  Disabled accounts are backed up per default, if they 
+                have a mailbox (often customers disable sharedmailbox accounts, but
+                still want to backup the shared mailboxes). If you do not
+                want to backup disabled accounts, use this switch to ignore them.
+                It can only be used together with "-ODGrp" and/or "ExchGrp" parameter.
+
     "-logout"          :  the script logs out of the current AzureAD session it
                 has just used. By default the session is kept running, for being 
                 able to run the script several times without the need for
                 multiple logins. If "-logout" is not used, a yellow warning 
                 message tells you, that the AzureAD session is still there.
-                You can combine the "-logout" parameter with any of the other, or
-                also use it standalone.
-        
+
+
+
+                
 
     Last Updated: May 2022
-    Version: 1.4
+    Version: 1.5
 	
 	Fixes: 
         2022-04-01, V1.0: First version
@@ -80,6 +77,7 @@
         2022-04-03, V1.2: Added group display, optional AzureAD logout and usercount per group
         2022-05-01, V1.3: Added separate parameter for group dispay, added help display
         2022-05-03, V1.4: Fixed bug which included users without a mailbox into the Exchange group
+        2022-05-08, V1.5: Added choice to ignore disabled accounts 
   
     Requires:
     To run the script you must install the Microsoft AzureAdPreview Powershell module:
@@ -99,6 +97,9 @@ Param(
 	# Generates dynamic distribution groups for Onedrive
     [switch] $ODGrp,
 
+	# Do not backup disabled accounts even if they have a mailbox or OD data
+    [switch] $IgnoreDisabledAcc,
+
     # Specifies the number of groups you want to generate (2 - 16)
     [int] $Groups = 0,
 
@@ -106,17 +107,16 @@ Param(
     [STRING[]]$qGroups,
 
 	# Logout from AzureAD when script exits
-    [parameter(ParameterSetName="logout")]
-    [alias("logoff")]
     [switch] $logout,
 
-    [parameter(ParameterSetName="help")]
+    # Display help
     [SWITCH]$help   
 );
 
           $Global:azureConnection      = ''
 [string[]]$Global:arrChar              = @(''); 
 [string]  $Global:LogFile              = "VBM365-DynamicGroups.log" 
+[string]  $Global:NoBackupDisabledAcc  = ''  
 [string]  $Global:strGroupNameStart    = "Veeam_"
 [string]  $Global:OneDriveAssignedPlan = '(user.assignedPlans -any (assignedPlan.servicePlanId -In' + 
 				' ["13696edf-5a08-49f6-8134-03083ed8ba30" ,"afcafa6a-d966-4462-918c-ec0b4e0fe642" ,"da792a53-cbc0-4184-a10d-e544dd34b3c1"' + 
@@ -128,7 +128,7 @@ Param(
 				' ,"a361d6e2-509e-4e25-a8ad-950060064ef4" ,"527f7cdd-0e86-4c47-b879-f5fd357a3ac6" ,"a1f3d0a8-84c0-4ae0-bae4-685917b8ab48"]))' 
 
 #--------------------- Function for help display
-function vbm-help() { return Get-Content $PSCommandPath -TotalCount 90 | Select-String -Pattern '.USAGE' -Context 0,30 }
+function vbmHelp() { return Get-Content $PSCommandPath -TotalCount 90 | Select-String -Pattern '.USAGE' -Context 0,34 }
 
 #--------------------- Function for logmessage writing
 function Write-Log($Info, $Status){
@@ -143,15 +143,15 @@ function Write-Log($Info, $Status){
 }
 	
 #--------------------- Function to create dynamic distributiongroups for Exchange	
-function Create-ExGroups(){ 										 
+function New-ExGroups(){ 										 
     $j=0 
                
     while($j -lt $arrChar.length){ 							  
         $strRegex = '^.{3}' + '[' + $arrChar[$j] + ']' 		 
         $strGroupName = $strGroupNameStart + 'Exchg_' + $arrChar[$j]  
-        $strMembershipRule = '(user.objectID -match "' + $strRegex + '") and (user.mail -ne null) and (user.accountEnabled -eq true)' 
+        $strMembershipRule = '(user.objectID -match "' + $strRegex + '") and (user.mail -ne null)' + $NoBackupDisabledAcc
 
-        if((Get-AzureADMSGroup | where{$_.DisplayName -eq $strGroupName}) -eq $null) {
+        if($null -eq (Get-AzureADMSGroup | Where-Object{$_.DisplayName -eq $strGroupName})) {
             try {
                 New-AzureADMSGroup -DisplayName "$strGroupName" -MailNickname "$strGroupName" `
                     -Description "Group for VBO Exchg backup with rule $strRegex" -MailEnabled $false -GroupTypes {DynamicMembership} `
@@ -172,15 +172,15 @@ function Create-ExGroups(){
 }
 
 #--------------------- Function to create dynamic distributiongroups for OneDrive
-function Create-ODGroups(){ 										 
+function New-ODGroups(){ 										 
     $j=0 
                
     while($j -lt $arrChar.length){ 							  
         $strRegex = '^.{3}' + '[' + $arrChar[$j] + ']' 		 
         $strGroupName = $strGroupNameStart + 'OneDr_' + $arrChar[$j]  
-        $strMembershipRule = '(user.objectID -match "' + $strRegex + '") and (user.accountEnabled -eq true) and ' + $OneDriveAssignedPlan
+        $strMembershipRule = '(user.objectID -match "' + $strRegex + '") ' + $NoBackupDisabledAcc + 'and ' + $OneDriveAssignedPlan
 
-        if((Get-AzureADMSGroup | where{$_.DisplayName -eq $strGroupName}) -eq $null) {
+        if($null -eq (Get-AzureADMSGroup | Where-Object{$_.DisplayName -eq $strGroupName})) {
             try {
                 New-AzureADMSGroup -DisplayName "$strGroupName" -MailNickname "$strGroupName" `
                     -Description "Group for VBO OneDr backup with rule $strRegex" -MailEnabled $false -GroupTypes {DynamicMembership} `
@@ -204,12 +204,16 @@ function Create-ODGroups(){
 #--------------------- Main function
 
 if ($help -or !($Groups -or $ODGrp -or $ExchGrp -or $qGroups -or $logout)) {
-    vbm-help
+    vbmHelp
     exit
 }
 
 if ($Groups) 
 {
+
+    if ($IgnoreDisabledAcc) {
+        $NoBackupDisabledAcc = ' and (user.accountEnabled -eq true) '
+    }
 
     if (!$ODGrp -and !$ExchGrp) {
             Write-Log -Info "Which groups ?  For Onedrive, for Exchange, or for both ?" -Status Error
@@ -220,21 +224,21 @@ if ($Groups)
     $arrCharString  = "0123456789abcdef"
     $Global:arrchar = switch ($Groups)
     {
-        2  {  0,8                 | % { $arrCharString.Substring($_,8) }                                                         }
-        3  { (0,5                 | % { $arrCharString.Substring($_,5) });                     $arrCharString.Substring(10,6)    }     
-        4  {  0,4,8,12            | % { $arrCharString.Substring($_,4) }                                                         }
-        5  { (0,3,6,9             | % { $arrCharString.Substring($_,3) });                     $arrCharString.Substring(12,4)    }
-        6  { (0,3,6,9             | % { $arrCharString.Substring($_,3) }); (12,14        | % { $arrCharString.Substring($_,2) }) }
-        7  { (0,2,4,6,8           | % { $arrCharString.Substring($_,2) }); (10,13        | % { $arrCharString.Substring($_,3) }) }
-        8  {  0,2,4,6,8,10,12,14  | % { $arrCharString.Substring($_,2) }                                                         }
-        9  { (0,2,4,6,8,10,12     | % { $arrCharString.Substring($_,2) }); (14,15        | % { $arrCharString.Substring($_,1) }) }
-        10 { (0,2,4,6,8,10        | % { $arrCharString.Substring($_,2) }); (12,13,14,15  | % { $arrCharString.Substring($_,1) }) }
-        11 { (0..5                | % { $arrCharString.Substring($_,1) }); (6,8,10,12,14 | % { $arrCharString.Substring($_,2) }) }
-        12 { (0..7                | % { $arrCharString.Substring($_,1) }); (8,10,12,14   | % { $arrCharString.Substring($_,2) }) }
-        13 { (0..9                | % { $arrCharString.Substring($_,1) }); (10,12,14     | % { $arrCharString.Substring($_,2) }) }           
-        14 { (0..11               | % { $arrCharString.Substring($_,1) }); (12,14        | % { $arrCharString.Substring($_,2) }) }
-        15 { (0..13               | % { $arrCharString.Substring($_,1) }); (14           | % { $arrCharString.Substring($_,2) }) }
-        16 {                            $arrCharString -split '(?<=.)(?=.)'                                                      }
+        2  {  0,8                 | ForEach-Object { $arrCharString.Substring($_,8) }                                                                      }
+        3  { (0,5                 | ForEach-Object { $arrCharString.Substring($_,5) });                                  $arrCharString.Substring(10,6)    }     
+        4  {  0,4,8,12            | ForEach-Object { $arrCharString.Substring($_,4) }                                                                      }
+        5  { (0,3,6,9             | ForEach-Object { $arrCharString.Substring($_,3) });                                  $arrCharString.Substring(12,4)    }
+        6  { (0,3,6,9             | ForEach-Object { $arrCharString.Substring($_,3) }); (12,14        | ForEach-Object { $arrCharString.Substring($_,2) }) }
+        7  { (0,2,4,6,8           | ForEach-Object { $arrCharString.Substring($_,2) }); (10,13        | ForEach-Object { $arrCharString.Substring($_,3) }) }
+        8  {  0,2,4,6,8,10,12,14  | ForEach-Object { $arrCharString.Substring($_,2) }                                                                      }
+        9  { (0,2,4,6,8,10,12     | ForEach-Object { $arrCharString.Substring($_,2) }); (14,15        | ForEach-Object { $arrCharString.Substring($_,1) }) }
+        10 { (0,2,4,6,8,10        | ForEach-Object { $arrCharString.Substring($_,2) }); (12,13,14,15  | ForEach-Object { $arrCharString.Substring($_,1) }) }
+        11 { (0..5                | ForEach-Object { $arrCharString.Substring($_,1) }); (6,8,10,12,14 | ForEach-Object { $arrCharString.Substring($_,2) }) }
+        12 { (0..7                | ForEach-Object { $arrCharString.Substring($_,1) }); (8,10,12,14   | ForEach-Object { $arrCharString.Substring($_,2) }) }
+        13 { (0..9                | ForEach-Object { $arrCharString.Substring($_,1) }); (10,12,14     | ForEach-Object { $arrCharString.Substring($_,2) }) }           
+        14 { (0..11               | ForEach-Object { $arrCharString.Substring($_,1) }); (12,14        | ForEach-Object { $arrCharString.Substring($_,2) }) }
+        15 { (0..13               | ForEach-Object { $arrCharString.Substring($_,1) }); (14           | ForEach-Object { $arrCharString.Substring($_,2) }) }
+        16 {                                         $arrCharString -split '(?<=.)(?=.)'                                                                   }
         default {
             Write-Log -Info "Number of groups to be generated must be between 2 and 16." -Status Error
             exit 99
@@ -248,7 +252,7 @@ else {
     }
 }
 
-if($Global:AccountID -eq $null) {
+if($null -eq $Global:AccountID) {
     Write-Log -Info "Trying to connect to AzureAD..." -Status Info
     try {
         $Global:azureConnection = Connect-AzureAD
@@ -266,37 +270,37 @@ if ($qGroups) {
 	Write-Log -Info "Searching your $qGroups groups (this may take some time, be patient):" -Status Info
     Try {
         (Get-AzureADMSGroup | 
-            where{$_.DisplayName -like $qGroups} | 
+            Where-Object{$_.DisplayName -like $qGroups} | 
             Sort-Object -Property DisplayName |
             ForEach-Object { $_ | 
             Add-Member -type NoteProperty -name Users -value ((Get-AzureADGroupMember -ObjectId $_.ID).count) -PassThru } |
-            ft @{Label="Created date";Expression={$_.CreatedDateTime}},
-               @{Label="Name";Expression={$_.DisplayName}},
-               @{Label="Users";Expression={$_.Users}},
-               @{Label="Description";Expression={$_.Description}} -autosize |
+            Format-Table @{Label="Created date";Expression={$_.CreatedDateTime}},
+                         @{Label="Name";        Expression={$_.DisplayName}},
+                         @{Label="Users";       Expression={$_.Users}},
+                         @{Label="Description"; Expression={$_.Description}} -autosize |
             Out-String).Trim()
         Write-Log -Info "It may take some minutes with large groups, until they are correctly filled with all users. Be patient." -Status Warning
         exit
     }
     catch {
         Write-Log -Info "$_" -Status Error
-        Write-Log -Info "New groups are not ready yet. Please be patient, AzureAD is busy." -Status Error
+        Write-Log -Info "New groups are not found or not ready yet. Please be patient, AzureAD is busy." -Status Error
         exit 99
     }
 }
 else {
     if ($ExchGrp) {
 	    Write-Log -Info "Creating Exchange groups..." -Status Info
-	    Create-ExGroups
+	    New-ExGroups
     }
 	
     if ($ODGrp) {
 	    Write-Log -Info "Creating ONEDrive groups..." -Status Info
-	    Create-ODGroups
+	    New-ODGroups
     }
 }
 	
-if($Global:AccountID -ne $null) {
+if($null -ne $Global:AccountID) {
     if ($logout) {
         Write-Log -Info "Trying to disconnect from AzureAD..." -Status Info
         try {
