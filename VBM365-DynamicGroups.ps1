@@ -8,14 +8,17 @@
     .NOTES
     Author: Herbert Szumovski
 
-    It is an update of David Bewernick's VBO-CreateDynamicGroups.ps1, which you can find here:
+    This is an update of David Bewernick's VBO-CreateDynamicGroups.ps1, which you can find here:
     https://github.com/VeeamHub/powershell/tree/master/VBO-CreateDynamicGroups
 
-    I added querying of existing AzureAD groups, to see, how many users they currently contain,
-    a configurable group count between 2 and 64 (limited by a uservariable to 64, you can extend 
-    it up to 256 if needed). 
-    Also the dynamic membership rules can be checked on your PC, before you really
-    create them in AzureAD.
+    The following was added:
+    1) configurable group count for creation of new groups between 2 and 256 (but 
+        limited by a uservariable to 64, so that Admins do not clutter their environment with 
+        hundreds of groups without thinkng twice). 
+    2) query of existing AzureAD groups to see, how many users they currently contain,
+    3) Check the groupnames and their dynamic membership rules on your screen, before you
+        shoot them up into AzureAD.
+    4) Function to delete groups in AzureAD.
 
     This is no official Veeam software, I just created this for convenience of my customers.
     Though checked on a best effort basis, it may contain errors.
@@ -23,10 +26,10 @@
 
 
     .DESCRIPTION
-    Via the dynamic distribution groups AzureAD will dynamically add new users in a way so
+    Via dynamic distribution groups AzureAD will dynamically add new users in a way so
     that the users are automatically roughly balanced between all groups, so no manual 
     changes are ever necessary.
-       The most balanced user distribution you get, if you use a group count which is
+       You get the most balanced user distribution, if you use a group count which is
     a power of 2 (so 2,4,8, 16 and 64, and if you extend the $limitGroups variable, then
     also 128 and 256. But however, also the other numbers will result in the best possible
     distribution which can be reached via this algorithm. 
@@ -35,7 +38,7 @@
     The groups made by this script inherit the userids based on the contents of their 
     respective AzureAD object-id. Byte 27 and 28 of the object-id are used to distribute
     the users across the groups (if not more than 16 groups are created, a lighter
-    syntax is used, targetting only byte 27).
+    algorithm is used, targetting only byte 27).
     
     For the OneDrive groups the userassigned serviceplan IDs for Onedrive are also used
     for comparison, so users without Onedrive access are not included there.
@@ -43,46 +46,52 @@
     .USAGE
     When the script starts, it checks, if there is an AzureAD session available from a prior run.
     If yes, it is used again, if no, it prompts you for a login. 
-    To logout from the AzureAD session after the script run, specify the "-logout" parameter.
+    To end the AzureAD session after the final run, specify the "-logout" parameter.
 
-    without parameters :  displays help 
+    "-ExchGrp"          :  creates dynamic distributiongroups for Exchange backup
 
-    "-help"            :  displays help
+    "-ODGrp"            :  creates dynamic distributiongroups for Onedrive backup
 
-    "-qGroups" <string>:  displays AzureAD groups found by search criteria <string>
-                The search criteria may contain generic chars '?' and '*'
-
-    "-ExchGrp"         :  creates dynamic distributiongroups for Exchange backup
-
-    "-ODGrp"           :  creates dynamic distributiongroups for Onedrive backup
-
-    "-create"          :  per default the generated groupnames and their AzureAD
-                dynamic membership rules will be only displayed, but not really created. 
+    "-create"           :  per default the generated groupnames and their AzureAD
+                dynamic membership rules will be displayed only, but not really created. 
                 To create them for AzureAD production you must specify this parameter.
 
-    "-groups" <number> :  number of groups which should be created. 
+    "-groups" <number>  :  number of groups which should be created. 
                 Must be an integer between 2 and 64. Can only be specified with
                 one or both of the above 2 parameters. (The group creation limit 
                 could be extended up to 256 via the "$limitGroups" variable, if you
-                would need for some reason that many groups. Take into consideration,
-                the more dynamic groups you have in your tenant, the more overhead
-                is necessary in AzureAD to maintain the group contents).
+                would need for some reason that many groups).
 
-    "-ignoreDisabledAcc:  Disabled accounts are backed up by default, if they 
+    "-ignoreDisabledAcc :  Disabled accounts are backed up by default, if they 
                 have a mailbox (often customers disable sharedmailbox accounts, but
                 still want to backup the shared mailboxes). If you do not
                 want to backup disabled accounts, use this switch to ignore them.
                 It can only be used together with "-ODGrp" and/or "ExchGrp" parameter.
 
-    "-logout"          :  the script logs out of the current AzureAD session it
+    "-queryGrp" <string>:  displays AzureAD groups found by search criteria <string>
+                           The search criteria may contain generic chars '?' and '*', and
+                           is case sensitive.
+
+    "-delGrp"   <string>:  deletes AzureAD groups found by search criteria <string>, after
+                           confirmation. Generic chars '?' and '*' are allowed, but only
+                           in combination with alphanumeric chars. 
+                           So something like "*" or "???*" is forbidden.
+                           The search criteria is case sensitive. 
+
+    "-logout"           :  the script logs out of the current AzureAD session it
                 has just used. By default the session is kept running, for being 
                 able to run the script several times without the need for
                 multiple logins. If "-logout" is not used, a yellow warning 
                 message tells you, that the AzureAD session is still there.
 
+    without parameters  :  displays help 
+
+    "-help"             :  displays help
+
+
 
     Last Updated: May 2022
-    Version: 1.6
+    Version: 1.7
 	
 	Fixes: 
         2022-04-01, V1.0: First version
@@ -92,12 +101,18 @@
         2022-05-01, V1.3: Added separate parameter for group dispay, added help display
         2022-05-03, V1.4: Fixed bug which included users without a mailbox into the Exchange group
         2022-05-08, V1.5: Added choice to ignore disabled accounts 
-        2022-05-15, V1.6: Changed algorithm so that up to 256 groups can be created. But limited the
+        2022-05-14, V1.6: Changed algorithm so that up to 256 groups can be created, but limited the
                           parameter input to 64 via a user variable.
+        2022-05-15, V1.7: Added a delete function.
+
     Requires:
     To run the script you must install the Microsoft AzureAdPreview Powershell module:
 
     Install-Module AzureAdPreview -Scope CurrentUser
+
+    If your Powershell environment is untouched, you must possibly use this command before:
+
+    Register-PSRepository -Default -InstallationPolicy Trusted
 
  #>
 
@@ -125,7 +140,12 @@ Param(
     # Displays the groups you select (also "?" and "*" are allowed), and their current number of users.
 	# It may take up to 24 hours until new groups contain their correct number of users.
     # Take care: If you have many groups and use "-qGroups * ", the resulting display could take a long time.
-    [STRING[]] $qGroups,
+    [STRING[]] $queryGrp,
+
+    # Deletes the groups you select, after confirmation. Though generic chars "?" and "*" are
+    # allowed in the selection string, they must always be combined with alphanumeric chars, which
+    # means, something like "*" or "???*" is forbidden.
+    [STRING[]] $delGrp,
 
 	# Logout from AzureAD when script exits
     [switch] $logout,
@@ -135,11 +155,11 @@ Param(
 );
 <#---------------------------------------------------------------------------------------------------
     Uservariables: 
-    The limitGroups variable can be changed up to a value of 256, if you would need that much groups.
-    The groupName prefix can be changed to fulfill your group naming conventions.
+    The groupNamePrefix can be changed to fulfill your group naming conventions.
+    The limitGroups can be changed up to a value of 256, if you would need that much groups.
 ---------------------------------------------------------------------------------------------------#>
-[int32]     $limitGroups = 64
 [string]    $groupNamePrefix = "Veeam_"
+[int32]     $limitGroups = 64
 <#---------------------------------------------------------------------------------------------------
     End of uservariables. 
     Don't change anything below, except if you know what you are doing. :-)
@@ -147,7 +167,7 @@ Param(
 
 
 #--------------------- Function for help display
-function vbmHelp() { return Get-Content $PSCommandPath -TotalCount 90 | Select-String -Pattern '.USAGE' -Context 0,38 }
+function vbmHelp() { return Get-Content $PSCommandPath -TotalCount 100 | Select-String -Pattern '.USAGE' -Context 0,44 }
 
 #--------------------- Function for AzureAD Login
 function AzureADLogin() {
@@ -170,7 +190,7 @@ function AzureADLogin() {
 #--------------------- Function for logmessage writing
 function Write-Log($Info, $Status) {
 
-    $timestamp = get-date -Format "yyyy-mm-dd HH:mm:ss"
+    $timestamp = get-date -Format "yyyy-MM-dd HH:mm:ss"
     $LogFile = "VBM365-DynamicGroups.log" 
 
     switch($Status) {
@@ -330,6 +350,25 @@ function GetGroupnames ($appl, $rules, $groupNamePrefix) {
     return $strGrpNames
 }
 
+#----------------- function to query existing AzureAD groups
+function GetGroups ($queryGrp) {
+
+    Write-Log -Info "Searching your $queryGrp groups (this may take some time, be patient):" -Status Info
+    Try {
+        $deleteGroups = (Get-AzureADMSGroup | 
+            Where-Object{$_.DisplayName -clike $queryGrp} | 
+            Sort-Object -Property DisplayName |
+            ForEach-Object { $_ | 
+            Add-Member -type NoteProperty -name Users -value ((Get-AzureADGroupMember -ObjectId $_.ID).count) -PassThru })
+    }
+    catch {
+        Write-Log -Info "$_" -Status Error
+        Write-Log -Info "Your searched groups are not found or are not ready yet. Please be patient, AzureAD needs some time to create newly configured groups." -Status Error
+        exit 99
+    }
+    return $deleteGroups
+}
+
 #------------------------------------- main function
 
 [string[]]$arrChar = @(); 
@@ -343,7 +382,7 @@ $OneDriveAssignedPlan = '(user.assignedPlans -any (assignedPlan.servicePlanId -I
 ' ,"735c1d98-dd3f-4818-b4ed-c8052e18e62d" ,"e03c7e47-402c-463c-ab25-949079bedb21" ,"e5bb877f-6ac9-4461-9e43-ca581543ab16"' + 
 ' ,"a361d6e2-509e-4e25-a8ad-950060064ef4" ,"527f7cdd-0e86-4c47-b879-f5fd357a3ac6" ,"a1f3d0a8-84c0-4ae0-bae4-685917b8ab48"]))' 
 
-if ($help -or !($groups -or $ODGrp -or $ExchGrp -or $qGroups -or $logout)) {
+if ($help -or !($groups -or $ODGrp -or $ExchGrp -or $queryGrp -or $logout -or $delGrp)) {
     vbmHelp
     exit
 }
@@ -399,28 +438,56 @@ else {
     }
 }
 
-if ($qGroups) {
+if ($queryGrp) {
 
     AzureADLogin
-
-    Write-Log -Info "Searching your $qGroups groups (this may take some time, be patient):" -Status Info
-    Try {
-        (Get-AzureADMSGroup | 
-            Where-Object{$_.DisplayName -like $qGroups} | 
-            Sort-Object -Property DisplayName |
-            ForEach-Object { $_ | 
-            Add-Member -type NoteProperty -name Users -value ((Get-AzureADGroupMember -ObjectId $_.ID).count) -PassThru } |
-            Format-Table @{Label="Created date";Expression={$_.CreatedDateTime}},
-                         @{Label="Name";        Expression={$_.DisplayName}},
-                         @{Label="Users";       Expression={$_.Users}},
-                         @{Label="Description"; Expression={$_.Description}} -autosize |
-            Out-String).Trim()
+    (GetGroups -queryGrp $queryGrp |
+        Format-Table    @{Label="Created date";Expression={$_.CreatedDateTime}},
+                        @{Label="Name";        Expression={$_.DisplayName}},
+                        @{Label="Users";       Expression={$_.Users}},
+                        @{Label="Description"; Expression={$_.Description}} -autosize |
+        Out-String).Trim()
         Write-Log -Info "It may take up to 24 hours with large groups, until they are correctly filled with all users. Be patient." -Status Warning
+}
+elseif ($delGrp) {
+
+    $regex = "^[\*\?]+$"
+    if ($delGrp -match $regex) {
+        Write-Log -Info "Generic char '$delgrp' only allowed together with alphanumeric chars." -Status Error    
+        Write-Log -Info "Be careful with generic chars, so that you don't delete important groups." -Status Error 
+        exit 99   
     }
-    catch {
-        Write-Log -Info "$_" -Status Error
-        Write-Log -Info "Your searched groups are not found or are not ready yet. Please be patient, AzureAD needs some time to create newly configured groups." -Status Error
-        exit 99
+
+    AzureADLogin
+    $dispose = GetGroups -queryGrp $delGrp
+
+    if ($null -eq $dispose) {
+        Write-Log -Info "No groups found for selection $delgrp" -Status Error 
+    }
+    else {
+        ($dispose |
+            Format-Table    @{Label="Created date";Expression={$_.CreatedDateTime}},
+                            @{Label="Name";        Expression={$_.DisplayName}},
+                            @{Label="Users";       Expression={$_.Users}},
+                            @{Label="Description"; Expression={$_.Description}} -autosize |
+            Out-String).Trim()
+
+        Write-Log -Info "Do you really want to delete all groups displayed above ?`nIf so, type exactly 'Yes' (case sensitive)" -Status Error
+
+        if (($answer = Read-Host) -ceq 'Yes') {
+            try {
+                foreach ($out in $dispose) {                                      
+                    Remove-AzureADMSGroup -Id $out.id > $null
+                    Write-Log -Info "Group $($out.DisplayName) deleted." -Status Warning
+                }
+            }
+            catch{
+                Write-Log -Info "$_" -Status Error
+                Write-Log -Info "Group $($out.DisplayName) could not be deleted." -Status Error
+            }
+
+        }
+        else { Write-Log -Info "Deletion skipped by user." -Status Error } 
     }
 }
 else {
@@ -450,7 +517,16 @@ else {
             for ($i=0; $i -lt $strGrpNames.Length; $i++) {
                 Write-Host "$($strGrpNames[$i])`:  (user.objectID -match `"$($arrChar[$i])`")"
             }  
-            Write-Log -Info "Onedrive membership rules will also contain this:`n'$OneDriveAssignedPlan'" -Status Warning    
+            Write-Log -Info "Onedrive membership rules will also contain this: " -Status Warning 
+            Write-Log -Info "(user.assignedPlans -any (assignedPlan.servicePlanId -In" -Status Warning
+            Write-Log -Info ' ["13696edf-5a08-49f6-8134-03083ed8ba30" ,"afcafa6a-d966-4462-918c-ec0b4e0fe642" ,"da792a53-cbc0-4184-a10d-e544dd34b3c1"' -Status Warning
+            Write-Log -Info ' ,"da792a53-cbc0-4184-a10d-e544dd34b3c1" ,"98709c2e-96b5-4244-95f5-a0ebe139fb8a" ,"e95bec33-7c88-4a70-8e19-b10bd9d0c014"' -Status Warning 
+            Write-Log -Info ' ,"fe71d6c3-a2ea-4499-9778-da042bf08063" ,"5dbe027f-2339-4123-9542-606e4d348a72" ,"e03c7e47-402c-463c-ab25-949079bedb21"' -Status Warning 
+            Write-Log -Info ' ,"63038b2c-28d0-45f6-bc36-33062963b498" ,"c7699d2e-19aa-44de-8edf-1736da088ca1" ,"5dbe027f-2339-4123-9542-606e4d348a72"' -Status Warning 
+            Write-Log -Info ' ,"902b47e5-dcb2-4fdc-858b-c63a90a2bdb9" ,"8f9f0f3b-ca90-406c-a842-95579171f8ec" ,"153f85dd-d912-4762-af6c-d6e0fb4f6692"' -Status Warning 
+            Write-Log -Info ' ,"735c1d98-dd3f-4818-b4ed-c8052e18e62d" ,"e03c7e47-402c-463c-ab25-949079bedb21" ,"e5bb877f-6ac9-4461-9e43-ca581543ab16"' -Status Warning 
+            Write-Log -Info ' ,"a361d6e2-509e-4e25-a8ad-950060064ef4" ,"527f7cdd-0e86-4c47-b879-f5fd357a3ac6" ,"a1f3d0a8-84c0-4ae0-bae4-685917b8ab48"]))' -Status Warning
+   
         }    
         Write-Log -Info "All membership rules will also contain this: '-and (user.mail -ne null) $NoBackupDisabledAcc'" -Status Warning
         Write-Log -Info "To create the above dynamic groups in AzureAD, specify the '-create' parameter." -Status Warning
