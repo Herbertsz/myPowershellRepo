@@ -118,7 +118,7 @@
 
 #Requires -Modules AzureAdPreview
 
-[CmdletBinding(DefaultParameterSetName='help',PositionalBinding=$False)]  
+[CmdletBinding(PositionalBinding=$False)]  
 
 Param(
     # Generates dynamic distribution groups for Exchange
@@ -353,7 +353,7 @@ function GetGroupnames ($appl, $rules, $groupNamePrefix) {
 #----------------- function to query existing AzureAD groups
 function GetGroups ($queryGrp) {
 
-    Write-Log -Info "Searching your $queryGrp groups (this may take some time, be patient):" -Status Info
+    Write-Log -Info "Searching your $queryGrp groups (this may take some time, be patient):`n" -Status Info
     Try {
         $deleteGroups = (Get-AzureADMSGroup | 
             Where-Object{$_.DisplayName -clike $queryGrp} | 
@@ -447,6 +447,7 @@ if ($queryGrp) {
                         @{Label="Users";       Expression={$_.Users}},
                         @{Label="Description"; Expression={$_.Description}} -autosize |
         Out-String).Trim()
+        Write-Host
         Write-Log -Info "It may take up to 24 hours with large groups, until they are correctly filled with all users. Be patient." -Status Warning
 }
 elseif ($delGrp) {
@@ -509,26 +510,26 @@ else {
         if ($ExchGrp) {
             $strGrpNames = GetGroupnames -appl "ExChg" -rules $arrChar -groupNamePrefix $groupNamePrefix
             for ($i=0; $i -lt $strGrpNames.Length; $i++) {
-                Write-Host "$($strGrpNames[$i])`:  (user.objectID -match `"$($arrChar[$i])`")"
+                Write-Log -Info "$($strGrpNames[$i])`:  (user.objectID -match `"$($arrChar[$i])`")" -Status Info
             }
         }    
         if ($ODGrp) {
             $strGrpNames = GetGroupnames -appl "ODGrp" -rules $arrChar -groupNamePrefix $groupNamePrefix
             for ($i=0; $i -lt $strGrpNames.Length; $i++) {
-                Write-Host "$($strGrpNames[$i])`:  (user.objectID -match `"$($arrChar[$i])`")"
+                Write-Log -Info "$($strGrpNames[$i])`:  (user.objectID -match `"$($arrChar[$i])`")" -Status Info
             }  
-            Write-Log -Info "Onedrive membership rules will also contain this: " -Status Warning 
-            Write-Log -Info "(user.assignedPlans -any (assignedPlan.servicePlanId -In" -Status Warning
-            Write-Log -Info ' ["13696edf-5a08-49f6-8134-03083ed8ba30" ,"afcafa6a-d966-4462-918c-ec0b4e0fe642" ,"da792a53-cbc0-4184-a10d-e544dd34b3c1"' -Status Warning
-            Write-Log -Info ' ,"da792a53-cbc0-4184-a10d-e544dd34b3c1" ,"98709c2e-96b5-4244-95f5-a0ebe139fb8a" ,"e95bec33-7c88-4a70-8e19-b10bd9d0c014"' -Status Warning 
-            Write-Log -Info ' ,"fe71d6c3-a2ea-4499-9778-da042bf08063" ,"5dbe027f-2339-4123-9542-606e4d348a72" ,"e03c7e47-402c-463c-ab25-949079bedb21"' -Status Warning 
-            Write-Log -Info ' ,"63038b2c-28d0-45f6-bc36-33062963b498" ,"c7699d2e-19aa-44de-8edf-1736da088ca1" ,"5dbe027f-2339-4123-9542-606e4d348a72"' -Status Warning 
-            Write-Log -Info ' ,"902b47e5-dcb2-4fdc-858b-c63a90a2bdb9" ,"8f9f0f3b-ca90-406c-a842-95579171f8ec" ,"153f85dd-d912-4762-af6c-d6e0fb4f6692"' -Status Warning 
-            Write-Log -Info ' ,"735c1d98-dd3f-4818-b4ed-c8052e18e62d" ,"e03c7e47-402c-463c-ab25-949079bedb21" ,"e5bb877f-6ac9-4461-9e43-ca581543ab16"' -Status Warning 
-            Write-Log -Info ' ,"a361d6e2-509e-4e25-a8ad-950060064ef4" ,"527f7cdd-0e86-4c47-b879-f5fd357a3ac6" ,"a1f3d0a8-84c0-4ae0-bae4-685917b8ab48"]))' -Status Warning
+            Write-Log -Info "Onedrive membership rules will also contain this: " -Status Info 
+            Write-Log -Info "(user.assignedPlans -any (assignedPlan.servicePlanId -In" -Status Info
+            Write-Log -Info ' ["13696edf-5a08-49f6-8134-03083ed8ba30" ,"afcafa6a-d966-4462-918c-ec0b4e0fe642" ,"da792a53-cbc0-4184-a10d-e544dd34b3c1"' -Status Info
+            Write-Log -Info ' ,"da792a53-cbc0-4184-a10d-e544dd34b3c1" ,"98709c2e-96b5-4244-95f5-a0ebe139fb8a" ,"e95bec33-7c88-4a70-8e19-b10bd9d0c014"' -Status Info 
+            Write-Log -Info ' ,"fe71d6c3-a2ea-4499-9778-da042bf08063" ,"5dbe027f-2339-4123-9542-606e4d348a72" ,"e03c7e47-402c-463c-ab25-949079bedb21"' -Status Info 
+            Write-Log -Info ' ,"63038b2c-28d0-45f6-bc36-33062963b498" ,"c7699d2e-19aa-44de-8edf-1736da088ca1" ,"5dbe027f-2339-4123-9542-606e4d348a72"' -Status Info 
+            Write-Log -Info ' ,"902b47e5-dcb2-4fdc-858b-c63a90a2bdb9" ,"8f9f0f3b-ca90-406c-a842-95579171f8ec" ,"153f85dd-d912-4762-af6c-d6e0fb4f6692"' -Status Info 
+            Write-Log -Info ' ,"735c1d98-dd3f-4818-b4ed-c8052e18e62d" ,"e03c7e47-402c-463c-ab25-949079bedb21" ,"e5bb877f-6ac9-4461-9e43-ca581543ab16"' -Status Info 
+            Write-Log -Info ' ,"a361d6e2-509e-4e25-a8ad-950060064ef4" ,"527f7cdd-0e86-4c47-b879-f5fd357a3ac6" ,"a1f3d0a8-84c0-4ae0-bae4-685917b8ab48"]))' -Status Info
    
         }    
-        Write-Log -Info "All membership rules will also contain this: '-and (user.mail -ne null) $NoBackupDisabledAcc'" -Status Warning
+        Write-Log -Info "All membership rules will also contain this: '-and (user.mail -ne null) $NoBackupDisabledAcc'" -Status Info
         Write-Log -Info "To create the above dynamic groups in AzureAD, specify the '-create' parameter." -Status Warning
         Write-Host
     }
