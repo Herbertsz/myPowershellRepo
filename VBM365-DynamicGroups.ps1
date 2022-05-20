@@ -14,7 +14,7 @@
     The following was added:
     1) configurable group count for creation of new groups between 2 and 256 (but 
         limited by a uservariable to 64, so that Admins do not clutter their environment with 
-        hundreds of groups without thinkng twice). 
+        hundreds of groups without thinking twice). 
     2) query of existing AzureAD groups to see, how many users they currently contain,
     3) Check the groupnames and their dynamic membership rules on your screen, before you
         shoot them up into AzureAD.
@@ -91,19 +91,20 @@
 
 
     Last Updated: May 2022
-    Version: 1.7
+    Version: 1.71
 	
 	Fixes: 
-        2022-04-01, V1.0: First version
-        2022-04-02, V1.1: Added OneDrive groups and parameter for flexible number of 
+        2022-04-01, V1.0 : First version
+        2022-04-02, V1.1 : Added OneDrive groups and parameter for flexible number of 
                           groups creation between 2 and 16
-        2022-04-03, V1.2: Added group display, optional AzureAD logout and usercount per group
-        2022-05-01, V1.3: Added separate parameter for group dispay, added help display
-        2022-05-03, V1.4: Fixed bug which included users without a mailbox into the Exchange group
-        2022-05-08, V1.5: Added choice to ignore disabled accounts 
-        2022-05-14, V1.6: Changed algorithm so that up to 256 groups can be created, but limited the
-                          parameter input to 64 via a user variable.
-        2022-05-15, V1.7: Added a delete function.
+        2022-04-03, V1.2 : Added group display, optional AzureAD logout and usercount per group
+        2022-05-01, V1.3 : Added separate parameter for group dispay, added help display
+        2022-05-03, V1.4 : Fixed bug which included users without a mailbox into the Exchange group
+        2022-05-08, V1.5 : Added choice to ignore disabled accounts 
+        2022-05-14, V1.6 : Changed algorithm so that up to 256 groups can be created, but limited the
+                           parameter input to 64 via a user variable.
+        2022-05-15, V1.7 : Added a delete function.
+        2022-05-19, V1.71: Minor cosmetic appearance changes.
 
     Requires:
     To run the script you must install the Microsoft AzureAdPreview Powershell module:
@@ -124,21 +125,21 @@ Param(
     # Generates dynamic distribution groups for Exchange
     [switch] $ExchGrp,
 
-	# Generates dynamic distribution groups for Onedrive
+    # Generates dynamic distribution groups for Onedrive
     [switch] $ODGrp,
 
-	# Per default the groups and their dynamic membership rules are only displayed for review.
+    # Per default the groups and their dynamic membership rules are only displayed for review.
     # To really create them in AzureAD you must specify this parameter.
     [switch] $create,
 
-	# Do not backup disabled accounts even if they have a mailbox or OD data
+    # Do not backup disabled accounts even if they have a mailbox or OD data
     [switch] $ignoreDisabledAcc,
 
     # Specifies the number of groups you want to generate (limited to 64 by uservariable below)
     [int] $groups = 0,
 
     # Displays the groups you select (also "?" and "*" are allowed), and their current number of users.
-	# It may take up to 24 hours until new groups contain their correct number of users.
+    # It may take up to 24 hours until new groups contain their correct number of users.
     # Take care: If you have many groups and use "-qGroups * ", the resulting display could take a long time.
     [STRING[]] $queryGrp,
 
@@ -147,7 +148,7 @@ Param(
     # means, something like "*" or "???*" is forbidden.
     [STRING[]] $delGrp,
 
-	# Logout from AzureAD when script exits
+    # Logout from AzureAD when script exits
     [switch] $logout,
 
     # Display help
@@ -427,6 +428,7 @@ if ($groups)
         {$_ -gt 16 -and $_ -le $limitGroups}  { GetLargeArrChar -Groups $_                                                                                                  }
         default {
             Write-Log -Info "Number of groups to be generated must be between 2 and $limitGroups." -Status Error
+            Write-Log -Info "You may expand the `$limitGroups variable up to 256, if you REALLY need that many groups." -Status Error
             exit 99
         }
     }
