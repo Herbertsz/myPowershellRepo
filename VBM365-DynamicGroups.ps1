@@ -30,7 +30,7 @@
     that the users are automatically roughly balanced between all groups, so no manual 
     changes are ever necessary.
        You get the most balanced user distribution, if you use a group count which is
-    a power of 2 (so 2,4,8, 16 and 64, and if you extend the $limitGroups variable, then
+    a power of 2 (so 2,4,8,16,32,64, and if you extend the $limitGroups variable, then
     also 128 and 256. But however, also the other numbers will result in the best possible
     distribution which can be reached via this algorithm. 
 
@@ -91,12 +91,12 @@
 
 
     Last Updated: May 2022
-    Version: 1.71
+    Version: 1.72
 	
 	Fixes: 
         2022-04-01, V1.0 : First version
         2022-04-02, V1.1 : Added OneDrive groups and parameter for flexible number of 
-                          groups creation between 2 and 16
+                           groups creation between 2 and 16
         2022-04-03, V1.2 : Added group display, optional AzureAD logout and usercount per group
         2022-05-01, V1.3 : Added separate parameter for group dispay, added help display
         2022-05-03, V1.4 : Fixed bug which included users without a mailbox into the Exchange group
@@ -105,6 +105,7 @@
                            parameter input to 64 via a user variable.
         2022-05-15, V1.7 : Added a delete function.
         2022-05-19, V1.71: Minor cosmetic appearance changes.
+        2022-05-22, V1.72: Minor cosmetic appearance changes.
 
     Requires:
     To run the script you must install the Microsoft AzureAdPreview Powershell module:
@@ -356,7 +357,7 @@ function GetGroups ($queryGrp) {
 
     Write-Log -Info "Searching your $queryGrp groups (this may take some time, be patient):`n" -Status Info
     Try {
-        $deleteGroups = (Get-AzureADMSGroup | 
+        $myGroups = (Get-AzureADMSGroup | 
             Where-Object{$_.DisplayName -clike $queryGrp} | 
             Sort-Object -Property DisplayName |
             ForEach-Object { $_ | 
@@ -367,7 +368,7 @@ function GetGroups ($queryGrp) {
         Write-Log -Info "Your searched groups are not found or are not ready yet. Please be patient, AzureAD needs some time to create newly configured groups." -Status Error
         exit 99
     }
-    return $deleteGroups
+    return $myGroups
 }
 
 #------------------------------------- main function
@@ -425,7 +426,7 @@ if ($groups)
         14 { (0..11               | ForEach-Object { $hdr + $arrCharString.Substring($_,1) + ']'}); (12,14        | ForEach-Object { $hdr + $arrCharString.Substring($_,2) + ']'})  }
         15 { (0..13               | ForEach-Object { $hdr + $arrCharString.Substring($_,1) + ']'}); (14           | ForEach-Object { $hdr + $arrCharString.Substring($_,2) + ']'})  }
         16 { $arrCharString -split '(?<=.)(?=.)' | ForEach-Object { $hdr + $_ + ']' }                                                                                               }                               
-        {$_ -gt 16 -and $_ -le $limitGroups}  { GetLargeArrChar -Groups $_                                                                                                  }
+        {$_ -gt 16 -and $_ -le $limitGroups}  { GetLargeArrChar -Groups $_          }
         default {
             Write-Log -Info "Number of groups to be generated must be between 2 and $limitGroups." -Status Error
             Write-Log -Info "You may expand the `$limitGroups variable up to 256, if you REALLY need that many groups." -Status Error
@@ -443,14 +444,21 @@ else {
 if ($queryGrp) {
 
     AzureADLogin
-    (GetGroups -queryGrp $queryGrp |
-        Format-Table    @{Label="Created date";Expression={$_.CreatedDateTime}},
-                        @{Label="Name";        Expression={$_.DisplayName}},
-                        @{Label="Users";       Expression={$_.Users}},
-                        @{Label="Description"; Expression={$_.Description}} -autosize |
-        Out-String).Trim()
+    $dispose = GetGroups -queryGrp $queryGrp
+
+    if ($null -eq $dispose) {
+        Write-Log -Info "No groups found for selection $queryGrp" -Status Error 
+    }
+    else {
+        ($dispose |
+            Format-Table    @{Label="Created date";Expression={$_.CreatedDateTime}},
+                            @{Label="Name";        Expression={$_.DisplayName}},
+                            @{Label="Users";       Expression={$_.Users}},
+                            @{Label="Description"; Expression={$_.Description}} -autosize |
+            Out-String).Trim()
         Write-Host
         Write-Log -Info "It may take up to 24 hours with large groups, until they are correctly filled with all users. Be patient." -Status Warning
+    }
 }
 elseif ($delGrp) {
 
@@ -465,7 +473,7 @@ elseif ($delGrp) {
     $dispose = GetGroups -queryGrp $delGrp
 
     if ($null -eq $dispose) {
-        Write-Log -Info "No groups found for selection $delgrp" -Status Error 
+        Write-Log -Info "No groups found for selection $delGrp" -Status Error 
     }
     else {
         ($dispose |
