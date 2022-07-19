@@ -89,9 +89,6 @@
     "-help"             :  displays help
 
 
-
-    Last Updated: May 2022
-    Version: 1.72
 	
 	Fixes: 
         2022-04-01, V1.0 : First version
@@ -106,6 +103,12 @@
         2022-05-15, V1.7 : Added a delete function.
         2022-05-19, V1.71: Minor cosmetic appearance changes.
         2022-05-22, V1.72: Minor cosmetic appearance changes.
+		2022-07-17, V1.8 : Makes it compatible also with Powershell 7.2
+		
+		
+    Last Updated: July 2022
+    Version: 1.8
+
 
     Requires:
     To run the script you must install the Microsoft AzureAdPreview Powershell module:
@@ -118,6 +121,7 @@
 
  #>
 
+#Requires -Version 5.1
 #Requires -Modules AzureAdPreview
 
 [CmdletBinding(PositionalBinding=$False)]  
@@ -173,12 +177,22 @@ function vbmHelp() { return Get-Content $PSCommandPath -TotalCount 100 | Select-
 
 #--------------------- Function for AzureAD Login
 function AzureADLogin() {
-
+	$Core = $false
+	
     if($null -eq $Global:AccountID) {
         Write-Log -Info "Trying to connect to AzureAD..." -Status Info
         try {
-            $azureConnection = Connect-AzureAD
-            $Global:AccountID = $azureConnection.Account.id
+			if ($PSVersionTable.PSVersion.Major -eq 7) { 
+				$Core = $true 
+				Write-Log -Info "AzureAD modules are not compatible with Powershell 7." -Status Warning
+				Write-Log -Info "Trying to load it in Powershell instead." -Status Warning
+				Write-Log -Info "If Login works, you can ignore the warning below." -Status Warning
+				Import-Module AzureAdPreview -UseWindowsPowerShell 
+			}
+            $azureConnection = Connect-AzureAD -ErrorAction Stop
+            if ($Core) { $Global:AccountID = $azureConnection.Account }
+			else 	   { $Global:AccountID = $azureConnection.Account.id }
+			
             Write-Log -Info "Connection successful with $Global:AccountID" -Status Info
         } 
         catch  {
@@ -337,11 +351,11 @@ function GetLargeArrChar($groups) {
 function GetGroupnames ($appl, $rules, $groupNamePrefix) {
     
     [string[]]$strGrpNames = @();
+    $stripper = [regex] "\[([^\[]*)\]"
 
     for ($i = 0; $i -lt $rules.count; $i++) {
-
-        $stripper = [regex] "\[([^\[]*)\]"
         $match = $stripper.match($rules[$i])
+
         if ('' -eq ($suffix = $match.groups[1].value)) {
             $pos = $rules[$i].IndexOf(":")
             $suffix2 = $rules[$i].Substring($pos+1)
