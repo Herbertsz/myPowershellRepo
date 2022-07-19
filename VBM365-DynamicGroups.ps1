@@ -103,7 +103,7 @@
         2022-05-15, V1.7 : Added a delete function.
         2022-05-19, V1.71: Minor cosmetic appearance changes.
         2022-05-22, V1.72: Minor cosmetic appearance changes.
-		2022-07-17, V1.8 : Makes it compatible also with Powershell 7.2
+        2022-07-17, V1.8 : Makes it compatible also with Powershell 7.2
 		
 		
     Last Updated: July 2022
@@ -159,6 +159,7 @@ Param(
     # Display help
     [SWITCH] $help   
 );
+
 <#---------------------------------------------------------------------------------------------------
     Uservariables: 
     The groupNamePrefix can be changed to fulfill your group naming conventions.
@@ -177,21 +178,21 @@ function vbmHelp() { return Get-Content $PSCommandPath -TotalCount 100 | Select-
 
 #--------------------- Function for AzureAD Login
 function AzureADLogin() {
-	$Core = $false
+    $Core = $false
 	
     if($null -eq $Global:AccountID) {
         Write-Log -Info "Trying to connect to AzureAD..." -Status Info
         try {
-			if ($PSVersionTable.PSVersion.Major -eq 7) { 
-				$Core = $true 
-				Write-Log -Info "AzureAD modules are not compatible with Powershell 7." -Status Warning
-				Write-Log -Info "Trying to load it in Powershell instead." -Status Warning
+            if ($PSVersionTable.PSVersion.Major -eq 7) { 
+                $Core = $true 
+                Write-Log -Info "AzureAD modules are not compatible with pwsh 7." -Status Warning
+				Write-Log -Info "Trying to load it in Powershell 5.1 instead." -Status Warning
 				Write-Log -Info "If Login works, you can ignore the warning below." -Status Warning
 				Import-Module AzureAdPreview -UseWindowsPowerShell 
-			}
+            }
             $azureConnection = Connect-AzureAD -ErrorAction Stop
-            if ($Core) { $Global:AccountID = $azureConnection.Account }
-			else 	   { $Global:AccountID = $azureConnection.Account.id }
+            if ($Core) { $Global:AccountID = $azureConnection.Account    }
+            else       { $Global:AccountID = $azureConnection.Account.id }
 			
             Write-Log -Info "Connection successful with $Global:AccountID" -Status Info
         } 
